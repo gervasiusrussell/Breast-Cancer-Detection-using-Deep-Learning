@@ -1,164 +1,125 @@
-Breast Cancer Detection using Deep Learning (IDC)
+# 🩺 Automated Detection of Invasive Ductal Carcinoma (IDC)
 
-📌 Executive Summary
+![Python](https://img.shields.io/badge/Python-3.10-blue)
+![TensorFlow](https://img.shields.io/badge/TensorFlow-2.x-orange)
+![Status](https://img.shields.io/badge/Status-Completed-success)
 
-The goal of this project was to develop a robust Deep Learning solution capable of detecting Invasive Ductal Carcinoma (IDC) in histopathology slides. The primary clinical objective was to maximize Sensitivity (Recall) to ensure no cancer cases are missed, while maintaining a high level of Precision to minimize false alarms.
+> **A Deep Learning solution to assist pathologists in identifying Invasive Ductal Carcinoma (IDC) in breast histology images with high sensitivity.**
 
-Using a dataset of 277,524 image patches, we developed a Custom Lightweight CNN optimized with Test-Time Augmentation (TTA). This approach outperformed complex transfer learning models (VGG16) and attention mechanisms (CBAM) in terms of efficiency and balance.
+## 📖 Table of Contents
+- [Project Overview](#-project-overview)
+- [The Dataset](#-the-dataset)
+- [Methodology & Workflow](#-methodology--workflow)
+    - [1. Exploratory Data Analysis](#1-exploratory-data-analysis-eda)
+    - [2. Patient-Centric Splitting](#2-patient-centric-splitting-crucial)
+    - [3. Model Architecture](#3-model-architecture)
+- [Experimental Results](#-experimental-results)
+- [Key Findings](#-key-findings)
+- [Usage](#-usage)
+- [Credits](#-credits)
 
-Final Test Set Results:
+---
 
-Sensitivity (Recall): 86%
+## 🔍 Project Overview
 
-Precision: 75%
+**Invasive Ductal Carcinoma (IDC)** is the most common form of breast cancer. Pathologists currently diagnose IDC by manually inspecting whole-mount tissue slides, a process that is time-consuming and prone to human fatigue.
 
-False Negatives: Minimized for patient safety.
+**Objective:** To build a robust Convolutional Neural Network (CNN) capable of classifying $50 \times 50$ pixel image patches of breast tissue as either:
+* **0 (Non-IDC):** Benign/Healthy tissue.
+* **1 (IDC):** Malignant cancer tissue.
 
-📂 Dataset
+**Goal:** Prioritize **Recall (Sensitivity)** to ensure the model minimizes False Negatives (missing a cancer case is worse than a false alarm).
 
-Source: Breast Histopathology Images (Kaggle)
+---
 
-Content: 277,524 patches of size 50x50 extracted from 162 whole-mount slide images.
+## 📊 The Dataset
 
-Classes:
+* **Source:** [Breast Histopathology Images](https://www.kaggle.com/paultimothymooney/breast-histopathology-images) (Original curation by Paul Mooney).
+* **Size:** 277,524 image patches.
+* **Format:** $50 \times 50 \times 3$ (RGB).
+* **Class Imbalance:** * Healthy (~72%)
+    * Cancer (~28%)
 
-0: Non-IDC (Healthy/Benign) - ~72%
+---
 
-1: IDC (Cancerous) - ~28%
+## ⚙️ Methodology & Workflow
 
-⚙️ Methodology
+### 1. Exploratory Data Analysis (EDA)
+* **Pixel Intensity:** Analyzed RGB channel distributions. Discovered that cancerous tissue typically exhibits lower mean pixel intensity (darker/purple) due to hypercellularity and nuclear atypia, matching H&E staining biology.
+* **Patient Variability:** Identified "Easy" patients (massive solid tumors) vs. "Hard" patients (sparse, tiny cancer spots).
 
-1. Data Preprocessing
+### 2. Patient-Centric Splitting (Crucial)
+A naive random split would cause **data leakage**, where patches from the same patient appear in both Train and Test sets. To fix this:
+1.  Grouped data by `Patient_ID`.
+2.  Calculated "Cancer Severity" per patient.
+3.  **Stratified Split:** Divided patients into Train/Val/Test sets ensuring an equal distribution of Low, Medium, and High severity cases in all sets.
 
-Stratified Patient Split: Instead of a random split, we split data by Patient ID to prevent "Data Leakage" (ensuring the model doesn't memorize a patient's specific tissue texture).
+### 3. Model Architecture
+We experimented with Transfer Learning (VGG16) but found a **Custom Lightweight CNN (CancerNet)** performed best.
 
-Class Balancing: Utilized sklearn.utils.class_weight to compute weights, forcing the model to pay ~2.5x more attention to the minority Cancer class during training.
+**Final Model Structure:**
+* **Input:** (50, 50, 3)
+* **3x Convolutional Blocks:** Conv2D -> BatchNorm -> ReLU -> MaxPool -> Dropout.
+* **Global Average Pooling (GAP):** Used instead of Flattening to reduce parameters and prevent overfitting.
+* **Dense Head:** Fully connected layers with heavy Dropout (0.5).
+* **Output:** Sigmoid activation for binary classification.
 
-Streaming Pipeline: Implemented tf.data.Dataset with CPU-pinning to stream batches to the GPU, preventing VRAM crashes on large datasets.
+**Training Strategy:**
+* **Class Weights:** Applied to penalize the model heavily for missing the minority class (Cancer).
+* **Callbacks:** `EarlyStopping`, `ReduceLROnPlateau`, and `ModelCheckpoint`.
 
-2. Model Architecture (The Winner: Custom CNN)
+---
 
-We experimented with multiple architectures:
+## 🏆 Experimental Results
 
-Custom CNN (Baseline): 3 Conv Blocks + Flatten + Dense.
+To improve robustness, **Test-Time Augmentation (TTA)** was used during inference. Predictions were averaged across 3 views (Original, Horizontal Flip, Vertical Flip).
 
-CancerNet V2: Deeper (6 Conv) + Global Average Pooling + ELU.
+| Metric | Score |
+| :--- | :--- |
+| **Accuracy** | **86%** |
+| **Recall (Sensitivity)** | **86%** |
+| **Precision** | **75%** |
+| **F1-Score** | **0.79** |
 
-Attention Model: Custom CNN + CBAM (Channel/Spatial Attention).
+### Confusion Matrix Interpretation (Test Set)
+* **True Positives (Cancer Found):** ~11,651
+* **False Negatives (Cancer Missed):** ~1,945
+* **False Positives (False Alarm):** ~3,884
 
-Transfer Learning: VGG16 (Fine-tuned).
+> The trade-off results in a higher False Positive rate to ensure a **High Recall**, making this a safe screening tool for pathologists.
 
-Verdict: The Standard Custom CNN proved to be the most effective. Complex models like VGG16 provided marginally better Recall but were computationally heavy and prone to overfitting noise. V2 with Global Average Pooling failed to detect small tumor features due to signal dilution.
+---
 
-3. Optimization: Test-Time Augmentation (TTA)
+## 💡 Key Findings
 
-To reduce False Positives, we implemented a TTA strategy during inference:
+1.  **Custom vs. Pre-trained:** A custom CNN trained from scratch outperformed VGG16 for this specific low-resolution task ($50 \times 50$ px).
+2.  **TTA is powerful:** Averaging predictions across flipped versions of the image smoothed out noise and improved generalization.
+3.  **Context Matters:** Reconstructing the whole-slide images confirmed that the model effectively delineates tumor boundaries, even though it only sees small patches.
 
-Predict on Original Image.
+---
 
-Predict on Horizontally Flipped Image.
+## 🚀 Usage
 
-Predict on Vertically Flipped Image.
+### Prerequisites
+* Python 3.x
+* TensorFlow / Keras
+* Pandas, NumPy, Matplotlib, Seaborn
+* Scikit-Learn
 
-Average the probabilities.
+### Running the Project
+1.  Clone the repository.
+2.  Download the dataset from [Kaggle](https://www.kaggle.com/paultimothymooney/breast-histopathology-images) and place it in the root directory.
+3.  Run the Jupyter Notebook:
+    ```bash
+    jupyter notebook BreastCancerDetection.ipynb
+    ```
 
-This consensus mechanism reduced False Alarms by ~100 cases in the Test Set without retraining.
+---
 
-📊 Results
+## 👤 Acknowledgement
 
-The model was evaluated on a held-out Test Set (41,883 images) from patients never seen during training.
+https://www.kaggle.com/code/allunia/breast-cancer?scriptVersionId=66390280
 
-Metric
+https://www.kaggle.com/datasets/paultimothymooney/breast-histopathology-images/data
 
-Baseline (Single Pass)
-
-TTA (3-View Average)
-
-Improvement
-
-Recall (Sensitivity)
-
-0.8569
-
-0.8572
-
-+4 cases found
-
-Precision
-
-0.7500
-
-0.7548
-
-+0.48% accuracy
-
-False Alarms (FP)
-
-3,884
-
-3,786
-
--98 false scares
-
-Missed Cancers (FN)
-
-1,945
-
-1,941
-
--4 missed tumors
-
-Clinical Interpretation: The system successfully acts as a "Digital Highlighter," flagging 86% of cancerous regions while being correct 3 out of 4 times it raises an alarm.
-
-🖼️ Visual Validation
-
-We reconstructed whole-slide masks to verify the model's spatial understanding.
-
-(Placeholder: Insert the 'Ground Truth vs Prediction' side-by-side image generated in the notebook here)
-
-The Blue regions (AI Predictions) closely follow the Red regions (Ground Truth), proving the model learned biological morphology (tissue density, nuclear atypia) rather than statistical noise.
-
-🚀 How to Run
-
-Prerequisites
-
-Python 3.9+
-
-TensorFlow 2.10 (for Windows Native GPU) or 2.15+ (Linux/WSL2)
-
-NumPy, Pandas, Matplotlib, Seaborn, Scikit-Learn
-
-Installation
-
-pip install tensorflow pandas numpy matplotlib seaborn scikit-learn
-
-
-Usage
-
-Download Data: Place the IDC_regular_ps50_idx5 folder in the project root.
-
-Training: Run the Jupyter Notebook Breast_Cancer_Detection.ipynb.
-
-Inference:
-
-from predictor import CancerPredictor
-
-# Load the TTA-enabled predictor
-model = CancerPredictor('models/cancer_model_final.h5')
-
-# Predict on a single image array (50, 50, 3)
-result = model.predict(my_image)
-print("Cancer Detected" if result == 1 else "Healthy")
-
-
-📝 Future Improvements
-
-Stain Normalization: Apply Macenko normalization to handle color variations between different labs.
-
-Ensemble Learning: Combine the Custom CNN with an EfficientNetB0 to capture different feature scales.
-
-Deployment: Wrap the model in a Flask/Streamlit API for a web-based diagnostic tool.
-
-🤝 Credits
-
-Dataset: [Paul Timothy Mooney
+https://www.kaggle.com/code/paultimothymooney/predict-idc-in-breast-cancer-histology-images
